@@ -19,22 +19,17 @@ class Regression:
 
     """Setting and getting regression results"""
 
-    def set_regression_results(self, x, y):
+    def regression_results(self, x, y):
         self.set_linear_regression(x, y)
         self.get_linear_regression()
         self.set_regression_residuals()
         self.get_regression_residuals()
-        self.set_param_regression()
+        self.set_regression_param()
 
     """Calculate coefficients of linear regression"""
 
     def set_linear_regression(self, x, y):
         self.linear_regression = sm.OLS(y, sm.add_constant(x)).fit()
-
-    """Results of linear regression"""
-
-    def get_linear_regression(self):
-        print(self.linear_regression.summary(), '\n')
 
     """Calculate residuals of regression model"""
 
@@ -43,7 +38,7 @@ class Regression:
 
     """Set of helpful params of regression"""
 
-    def set_param_regression(self):
+    def set_regression_param(self):
         self.param_regression = {'coefficients': self.linear_regression.params, 'std': self.linear_regression.bse,
                                  'pv': self.linear_regression.pvalues, 't': self.linear_regression.tvalues,
                                  'df': int(self.linear_regression.df_model), 'nobs': int(self.linear_regression.nobs),
@@ -54,6 +49,26 @@ class Regression:
     def get_regression_residuals(self):
         print('Residuals of regression model:')
         print(self.residuals, '\n')
+
+    """Get count of depended values"""
+
+    def get_df(self):
+        return self.linear_regression.df_model
+
+    """Get adjusted r2"""
+
+    def get_r2_adj(self):
+        return self.linear_regression.rsquared_adj
+
+    """Results of linear regression"""
+
+    def get_linear_regression(self):
+        print(self.linear_regression.summary(), '\n')
+
+    """Test p-values of coefficients on significance"""
+
+    def test_significance(self):
+        return max(self.linear_regression.pvalues) >= 0.05
 
     """Check hypothesis of normal distribution residuals"""
 
@@ -121,11 +136,12 @@ class Regression:
 
     def create_confidence_interval(self):
         t_const = stats.t.ppf(1 - self.alpha / 2, self.param_regression['nobs'] - self.param_regression['df'] - 1)
+        print()
         for i in range(len(self.param_regression['coefficients'])):
-            print('\n' + f"interval: "
-                         f"{self.param_regression['coefficients'][i] - t_const * self.param_regression['std'][i]:.2f} "
-                         f"< b{i} < "
-                         f"{self.param_regression['coefficients'][i] + t_const * self.param_regression['std'][i]:.2f}")
+            print(f"interval: "
+                  f"{self.param_regression['coefficients'][i] - t_const * self.param_regression['std'][i]:.2f} "
+                  f"< b{i} < "
+                  f"{self.param_regression['coefficients'][i] + t_const * self.param_regression['std'][i]:.2f}")
 
 
 """Class, which contains object - dataFrame and methods with them"""
@@ -198,7 +214,7 @@ class Data:
             scores_with_candidates = []
             for candidate in x_values:
                 regression.set_linear_regression(self.df[[candidate] + selected_values], self.y)
-                score = regression.linear_regression.rsquared_adj
+                score = regression.linear_regression.get_r2_adj()
                 scores_with_candidates.append((score, candidate))
             scores_with_candidates.sort()
             best_new_score, best_candidate = scores_with_candidates.pop()
@@ -209,6 +225,57 @@ class Data:
         regression.set_linear_regression(self.df[selected_values], self.y)
         return regression
 
+    """Method of eliminating multicollinearity by excluding variables"""
+
+    def backward_excluded(self):
+        regression = Regression()
+        regression.set_linear_regression(self.x, self.y)
+        x_values = set(self.columns[1:])
+        while regression.test_significance():
+            scores_with_candidates = []
+            for candidate in x_values:
+                regression.set_linear_regression(self.df[list(x_values - set([candidate]))], self.y)
+                score = regression.linear_regression.get_r2_adj()
+                scores_with_candidates.append((score, candidate))
+            scores_with_candidates.sort()
+            best_score, remove_candidate = scores_with_candidates.pop()
+            x_values.remove(remove_candidate)
+            regression.set_linear_regression(self.df[list(x_values)], self.y)
+        return regression
+
+
+class Result:
+    def __init__(self, backward_regression, forward_regression):
+        self.backward_regression = backward_regression
+        self.forward_regression = forward_regression
+        self.best_regression = None
+        self.name_of_best_regression = None
+
+    """Set best regression after eliminating multicollinearity"""
+
+    def set_best_regression(self, count_df):
+        current_adj = -1.0
+        if self.backward_regression.get_df() >= count_df // 2:
+            current_adj = self.backward_regression.get_r2_adj()
+        if self.forward_regression.get_df() >= count_df // 2:
+            if self.forward_regression.get_r2_adj() > current_adj:
+                self.best_regression = self.forward_regression
+                self.name_of_best_regression = "Regression received using method including variables"
+            else:
+                self.best_regression = self.backward_regression
+                self.name_of_best_regression = "Regression received using method excluding variables"
+        self.best_regression.set_regression_residuals()
+        self.best_regression.set_regression_param()
+
+    """Get results of analyse"""
+
+    def get_results(self):
+        print('\n' + self.name_of_best_regression + '\n')
+        self.best_regression.get_linear_regression()
+        self.best_regression.draw_distribution_of_residuals()
+        self.best_regression.significance_of_coefficents()
+        self.best_regression.create_confidence_interval()
+
 
 def main(file_name, sheet_name):
     data = Data(file_name, sheet_name)
@@ -217,9 +284,9 @@ def main(file_name, sheet_name):
     data.descriptive_stats()
 
     linear_regression = Regression()
-    linear_regression.set_regression_results(data.x, data.y)
+    linear_regression.regression_results(data.x, data.y)
     linear_regression.residuals_normality_test()
-    # linear_regression.draw_distribution_of_residuals()
+    linear_regression.draw_distribution_of_residuals()
 
     linear_regression.significance_of_coefficents()
     linear_regression.create_confidence_interval()
@@ -228,9 +295,11 @@ def main(file_name, sheet_name):
     data.test_multicollinearity_r2()
 
     forward_regression = data.forward_select()
-    forward_regression.get_linear_regression()
+    backward_regression = data.backward_excluded()
 
-
+    result = Result(backward_regression, forward_regression)
+    result.set_best_regression(len(data.columns) - 1)
+    result.get_results()
 
 
 if __name__ == '__main__':
