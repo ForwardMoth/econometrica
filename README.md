@@ -9,3 +9,7 @@
 6. Identification of multicollinearity
 7. Eliminating multicollinearity
 8. Results of work after eliminating multicollinearity 
+
+## lab2
+
+Work in progress
