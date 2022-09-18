@@ -1,5 +1,7 @@
 # Implementation of laboratory work on the econometrics course
 
+Created by @ForwardMoth
+
 ## lab1 
 1. Obtaining a classical linear model of multiple regression from the original data
 2. Testing the hypothesis of the normal distribution of regression residuals
@@ -13,3 +15,4 @@
 ## lab2
 
 Work in progress
+

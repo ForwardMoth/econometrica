@@ -15,7 +15,8 @@ class Regression:
         self.distribution = {"stat": None, 'pv': None, "KS_stat": None, "KS_pv": None}
         self.histData = None
         self.param_regression = {'coefficients': None, 'std': None, 'pv': None, 't': None, 'df': None, 'nobs': None,
-                                 'r2': None}
+                                 'r2': None, 'f': None, 'f_pv': None}
+        self.variable_names = None
 
     """Setting and getting regression results"""
 
@@ -42,7 +43,19 @@ class Regression:
         self.param_regression = {'coefficients': self.linear_regression.params, 'std': self.linear_regression.bse,
                                  'pv': self.linear_regression.pvalues, 't': self.linear_regression.tvalues,
                                  'df': int(self.linear_regression.df_model), 'nobs': int(self.linear_regression.nobs),
-                                 'r2': self.linear_regression.rsquared}
+                                 'r2': self.linear_regression.rsquared, 'f': self.linear_regression.fvalue,
+                                 'f_pv': self.linear_regression.f_pvalue}
+        self.set_variable_names()
+
+    """Set variable names for beauty print"""
+
+    def set_variable_names(self):
+        self.variable_names = []
+        for name in self.linear_regression.model.exog_names:
+            if name == 'const':
+                self.variable_names.append('0')
+            else:
+                self.variable_names.append(name[1])
 
     """Show residuals"""
 
@@ -53,7 +66,7 @@ class Regression:
     """Get count of depended values"""
 
     def get_df(self):
-        return self.linear_regression.df_model
+        return int(self.linear_regression.df_model)
 
     """Get adjusted r2"""
 
@@ -65,9 +78,31 @@ class Regression:
     def get_linear_regression(self):
         print(self.linear_regression.summary(), '\n')
 
+    """Get variable names for beauty print"""
+
+    def get_variable_names(self):
+        return self.variable_names
+
+    """Get coefficients"""
+
+    def get_coefficients(self):
+        return self.param_regression['coefficients']
+
+    """Test on significance of regression equation"""
+
+    def test_significance_regression(self):
+        if self.param_regression['f_pv'] < self.alpha:
+            print(f'p-value={self.param_regression["f_pv"]:.3f} < {self.alpha}, value of F-statistic = '
+                  f'{self.param_regression["f"]:.3f}. Thus, we get that the regression equation is significant' +
+                  '\n')
+        else:
+            print(f'p-value={self.param_regression["f_pv"]:.3f} > {self.alpha}, value of F-statistic = '
+                  f'{self.param_regression["f"]:.3f}. Thus, we get that the regression equation is not'
+                  f' significant' + '\n')
+
     """Test p-values of coefficients on significance"""
 
-    def test_significance(self):
+    def test_significance_coefficients(self):
         return max(self.linear_regression.pvalues) >= 0.05
 
     """Check hypothesis of normal distribution residuals"""
@@ -122,26 +157,27 @@ class Regression:
     """Check coefficents in linear regression on significant"""
 
     def significance_of_coefficents(self):
-        for i in range(len(self.param_regression['coefficients'])):
+        for i in range(len(self.get_coefficients())):
             if self.param_regression['pv'][i] < self.alpha:
                 print(f"The null hypothesis can be rejected (p={self.param_regression['pv'][i]:.4f}<{self.alpha}), "
-                      f"coefficient b{i}={self.param_regression['coefficients'][i]:.4f} "
+                      f"coefficient b{self.variable_names[i]}={self.get_coefficients()[i]:.4f} "
                       f"is significantly different from zero. t(75)={self.param_regression['t'][i]:.3f}")
             else:
                 print(f"The null hypothesis cannot be rejected (p={self.param_regression['pv'][i]:.4f}>{self.alpha}), "
-                      f"coefficient b{i}={self.param_regression['coefficients'][i]:.4f} is insignificant. "
-                      f"t(75)={self.param_regression['t'][i]:.3f}")
+                      f"coefficient b{self.variable_names[i]}={self.get_coefficients()[i]:.4f} "
+                      f"is insignificant. t(75)={self.param_regression['t'][i]:.3f}")
 
-    """Confidence interval of b coefficients"""
+    """Confidence interval for b significant coefficients"""
 
     def create_confidence_interval(self):
         t_const = stats.t.ppf(1 - self.alpha / 2, self.param_regression['nobs'] - self.param_regression['df'] - 1)
         print()
-        for i in range(len(self.param_regression['coefficients'])):
-            print(f"interval: "
-                  f"{self.param_regression['coefficients'][i] - t_const * self.param_regression['std'][i]:.2f} "
-                  f"< b{i} < "
-                  f"{self.param_regression['coefficients'][i] + t_const * self.param_regression['std'][i]:.2f}")
+        for i in range(len(self.get_coefficients())):
+            if self.param_regression['pv'][i] < self.alpha:
+                print(f"interval: "
+                      f"{self.get_coefficients()[i] - t_const * self.param_regression['std'][i]:.2f} "
+                      f"< b{self.variable_names[i]} < "
+                      f"{self.get_coefficients()[i] + t_const * self.param_regression['std'][i]:.2f}")
 
 
 """Class, which contains object - dataFrame and methods with them"""
@@ -214,7 +250,7 @@ class Data:
             scores_with_candidates = []
             for candidate in x_values:
                 regression.set_linear_regression(self.df[[candidate] + selected_values], self.y)
-                score = regression.linear_regression.get_r2_adj()
+                score = regression.get_r2_adj()
                 scores_with_candidates.append((score, candidate))
             scores_with_candidates.sort()
             best_new_score, best_candidate = scores_with_candidates.pop()
@@ -231,11 +267,11 @@ class Data:
         regression = Regression()
         regression.set_linear_regression(self.x, self.y)
         x_values = set(self.columns[1:])
-        while regression.test_significance():
+        while regression.test_significance_coefficients():
             scores_with_candidates = []
             for candidate in x_values:
                 regression.set_linear_regression(self.df[list(x_values - set([candidate]))], self.y)
-                score = regression.linear_regression.get_r2_adj()
+                score = regression.get_r2_adj()
                 scores_with_candidates.append((score, candidate))
             scores_with_candidates.sort()
             best_score, remove_candidate = scores_with_candidates.pop()
@@ -267,14 +303,42 @@ class Result:
         self.best_regression.set_regression_residuals()
         self.best_regression.set_regression_param()
 
+    """Sort coefficients for beauty print"""
+    def bubble_sort(self, names, coefficients):
+        for i in range(len(coefficients)-1):
+            for j in range(len(coefficients)-i-1):
+                if int(names[j+1]) < int(names[j]):
+                    names[j+1], names[j] = names[j], names[j+1]
+                    coefficients[j+1], coefficients[j] = coefficients[j], coefficients[j+1]
+        return names, coefficients
+
+    """print beauty view of equation"""
+
+    def print_equation(self):
+        names = self.best_regression.get_variable_names()
+        coefficients = self.best_regression.get_coefficients()
+        names, coefficients = self.bubble_sort(names, coefficients)
+        equation = "Y = "
+        for i in range(len(names)):
+            if names[i] == '0':
+                equation += f"{coefficients[i]:.4f}"
+            elif coefficients[i] > 0:
+                equation += f" + {coefficients[i]:.4f} * x" + names[i]
+            else:
+                equation += f" - {abs(coefficients[i]):.4f} * x" + names[i]
+
+        print('\n' + "Result equation: ", equation)
+
     """Get results of analyse"""
 
     def get_results(self):
         print('\n' + self.name_of_best_regression + '\n')
         self.best_regression.get_linear_regression()
         self.best_regression.draw_distribution_of_residuals()
+        self.best_regression.test_significance_regression()
         self.best_regression.significance_of_coefficents()
         self.best_regression.create_confidence_interval()
+        self.print_equation()
 
 
 def main(file_name, sheet_name):
@@ -285,9 +349,10 @@ def main(file_name, sheet_name):
 
     linear_regression = Regression()
     linear_regression.regression_results(data.x, data.y)
+
     linear_regression.residuals_normality_test()
     linear_regression.draw_distribution_of_residuals()
-
+    linear_regression.test_significance_regression()
     linear_regression.significance_of_coefficents()
     linear_regression.create_confidence_interval()
 
